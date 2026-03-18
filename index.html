@@ -7,29 +7,18 @@
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- React & ReactDOM -->
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <!-- Babel -->
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <!-- FontAwesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- SweetAlert2 -->
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <!-- jsPDF & autoTable for PDF Export -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
-
+  
   <style>
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: #f1f1f1; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .loader { border-top-color: #3b82f6; animation: spinner 1.5s linear infinite; }
     @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .bg-late { background-color: #fef9c3 !important; }
-    .bg-outside { background-color: #fee2e2 !important; }
-    .bg-psw { background-color: #d1fae5 !important; }
+    .bg-late { background-color: #fef9c3 !important; } /* Kuning Lembut */
+    .bg-outside { background-color: #fee2e2 !important; } /* Merah Lembut */
+    .bg-psw { background-color: #d1fae5 !important; } /* Hijau Lembut untuk PSW */
     
+    /* Animasi untuk login */
     @keyframes slideInLeft {
       from { transform: translateX(-100%); opacity: 0; }
       to { transform: translateX(0); opacity: 1; }
@@ -45,6 +34,78 @@
       animation: slideInRight 0.6s ease-out forwards;
     }
   </style>
+
+  <!-- Polyfill untuk google.script.run di Vercel -->
+  <script>
+    (function() {
+      // Ganti URL ini dengan URL Apps Script yang sudah dideploy
+      const APP_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9mWLQM1duMM_3gFzAuWM0szn5dxMcQSjsoFU18zFSFtGm3XIKMXdANwAPgooz1uZ2/exec';
+
+      // Jika sudah ada google.script (misal di lingkungan Apps Script), biarkan asli
+      if (typeof google !== 'undefined' && google.script && google.script.run) {
+        return;
+      }
+
+      class GoogleScriptRun {
+        constructor() {
+          this._successHandler = null;
+          this._failureHandler = null;
+          this._url = APP_SCRIPT_URL;
+        }
+        withSuccessHandler(handler) {
+          this._successHandler = handler;
+          return this;
+        }
+        withFailureHandler(handler) {
+          this._failureHandler = handler;
+          return this;
+        }
+        callFunction(funcName, args) {
+          fetch(this._url, {
+            method: 'POST',
+            mode: 'cors',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: funcName, args })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (this._successHandler) this._successHandler(data);
+          })
+          .catch(err => {
+            if (this._failureHandler) this._failureHandler(err);
+          });
+        }
+      }
+
+      const runHandler = new GoogleScriptRun();
+      const proxy = new Proxy(runHandler, {
+        get(target, prop) {
+          if (prop === 'withSuccessHandler' || prop === 'withFailureHandler') {
+            return target[prop].bind(target);
+          } else {
+            return (...args) => target.callFunction(prop, args);
+          }
+        }
+      });
+
+      window.google = window.google || {};
+      window.google.script = window.google.script || {};
+      window.google.script.run = proxy;
+    })();
+  </script>
+
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- SweetAlert2 -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- jsPDF & autoTable for PDF Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body class="bg-gray-100 text-gray-800 font-sans antialiased">
   <div id="root"></div>
@@ -52,56 +113,22 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
 
-    // ========== KONFIGURASI ==========
-    // GANTI URL INI DENGAN URL DEPLOYMENT GOOGLE APPS SCRIPT ANDA
-    const BASE_URL = 'https://script.google.com/macros/s/AKfycbw9mWLQM1duMM_3gFzAuWM0szn5dxMcQSjsoFU18zFSFtGm3XIKMXdANwAPgooz1uZ2/exec';
-
-    // ========== FUNGSI PANGGIL API ==========
-    const runGoogleScript = async (funcName, ...args) => {
-      let payload = { action: funcName };
-      
-      // Sesuaikan parameter berdasarkan nama fungsi
-      if (funcName === 'login') {
-        payload.username = args[0];
-        payload.password = args[1];
-      } else if (funcName === 'updateKeteranganBukti') {
-        payload.rowIndex = args[0];
-        payload.keterangan = args[1];
-      } else if (funcName === 'updateDokumenIjin') {
-        payload.rowIndex = args[0];
-        payload.status = args[1];
-        payload.keterangan = args[2];
-      } else if (funcName === 'deleteDokumenIjin') {
-        payload.rowIndex = args[0];
-      } else if (funcName === 'addPegawai') {
-        payload.data = args[0];
-      } else if (funcName === 'updatePegawai') {
-        payload.rowIndex = args[0];
-        payload.data = args[1];
-      } else if (funcName === 'deletePegawai') {
-        payload.rowIndex = args[0];
-      }
-      // Fungsi tanpa parameter: getPresensi, getIjin, getPegawai, resetDataPresensi
-      
-      const response = await fetch(BASE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' }, // hindari preflight CORS
-        body: JSON.stringify(payload)
+    // Helper untuk komunikasi dengan Google Script
+    const runGoogleScript = (funcName, ...args) => {
+      return new Promise((resolve, reject) => {
+        if (typeof google !== 'undefined' && google.script) {
+          google.script.run
+            .withSuccessHandler(resolve)
+            .withFailureHandler(reject)
+            [funcName](...args);
+        } else {
+          console.warn('Google Script tidak terdeteksi. Menggunakan simulasi.');
+          setTimeout(() => resolve([]), 500);
+        }
       });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const text = await response.text();
-      try {
-        return JSON.parse(text);
-      } catch (e) {
-        throw new Error('Respons dari server bukan JSON valid');
-      }
     };
 
-    // ========== FUNGSI-FUNGSI PEMBANTU (sama seperti asli) ==========
+    // Fungsi untuk mengekstrak file ID dari URL Google Drive
     const extractFileIdFromDriveUrl = (url) => {
       if (!url) return null;
       let match = url.match(/\/file\/d\/([^\/]+)/);
@@ -113,6 +140,7 @@
       return null;
     };
 
+    // Logika Penentuan Terlambat (Datang > 07:30)
     const checkLateStatus = (waktuStr, jenisPresensi) => {
       if (!waktuStr || !jenisPresensi || jenisPresensi.toLowerCase() !== 'datang') return false;
       try {
@@ -123,7 +151,7 @@
         const hours = parseInt(hh, 10);
         const mins = parseInt(mm, 10);
         const totalMinutes = (hours * 60) + mins;
-        return totalMinutes > 450;
+        return totalMinutes > 450; // 07:30 = 450 menit
       } catch (e) {
         return false;
       }
@@ -137,15 +165,18 @@
       return ketRadius && (ketRadius.toLowerCase().includes('tidak hadir') || ketRadius.toLowerCase().includes('hari libur'));
     };
 
+    // Fungsi normalisasi nama: hapus semua karakter non-alfanumerik, ubah ke lowercase
     const normalizeName = (name) => {
       if (!name) return '';
       return name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     };
 
+    // Fungsi untuk memparsing tanggal dari string Waktu Presensi
     const parsePresensiDate = (waktuStr) => {
       if (!waktuStr) return null;
-      const parts = waktuStr.split('pukul')[0].trim();
-      const dateParts = parts.split(', ')[1];
+      // Format: "Senin, 2 Maret 2026 pukul 06.32.16"
+      const parts = waktuStr.split('pukul')[0].trim(); // "Senin, 2 Maret 2026"
+      const dateParts = parts.split(', ')[1]; // "2 Maret 2026"
       if (!dateParts) return null;
       const [day, monthName, year] = dateParts.split(' ');
       const monthMap = {
@@ -157,6 +188,7 @@
       return `${day.padStart(2, '0')}/${month.toString().padStart(2, '0')}/${year}`;
     };
 
+    // Fungsi untuk mengubah tanggal ISO (yyyy-mm-dd) ke dd/mm/yyyy
     const parseIjinDate = (dateStr) => {
       if (!dateStr) return null;
       const [year, month, day] = dateStr.split('-');
@@ -164,8 +196,10 @@
       return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
     };
 
+    // Fungsi untuk mengecek apakah suatu tanggal (dd/mm/yyyy) berada dalam rentang
     const isDateInRange = (dateStr, startStr, endStr) => {
       if (!dateStr || !startStr || !endStr) return false;
+      // Konversi ke angka untuk perbandingan
       const toNum = (d) => {
         const [dd, mm, yyyy] = d.split('/').map(Number);
         return yyyy * 10000 + mm * 100 + dd;
@@ -176,21 +210,30 @@
       return dateNum >= startNum && dateNum <= endNum;
     };
 
+    // Fungsi untuk memperkaya data presensi dengan informasi PSW dari ijin
     const enrichPresensiWithIjin = (presensi, ijin) => {
       if (!presensi || !ijin) return presensi;
+      // Filter ijin yang disetujui (case insensitive)
       const approvedIjin = ijin.filter(item => item.Status && item.Status.toLowerCase() === 'disetujui');
+      
       return presensi.map(p => {
         const psw = approvedIjin.some(item => {
+          // Normalisasi nama pegawai
           const namaPegawaiPresensi = normalizeName(p['Nama Pegawai'] || '');
           const namaPegawaiIjin = normalizeName(item['Nama Pegawai'] || '');
           if (namaPegawaiPresensi !== namaPegawaiIjin) return false;
+          
           const presensiDate = parsePresensiDate(p['Waktu']);
           if (!presensiDate) return false;
+          
+          // Konversi tanggal ijin dari ISO ke dd/mm/yyyy
           const startDate = parseIjinDate(item['Tanggal Awal']);
           const endDate = parseIjinDate(item['Tanggal Berakir']);
           if (!startDate || !endDate) return false;
+          
           return isDateInRange(presensiDate, startDate, endDate);
         });
+        
         if (psw) {
           return { ...p, isPSW: true, displayRadius: 'PSW' };
         } else {
@@ -208,20 +251,16 @@
       const handleSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
-        try {
-          const res = await runGoogleScript('login', username, password);
-          if (res && res.success) onLogin(res.user);
-          else Swal.fire('Error', 'Username atau password salah!', 'error');
-        } catch (err) {
-          Swal.fire('Koneksi Error', err.message, 'error');
-        } finally {
-          setLoading(false);
-        }
+        const res = await runGoogleScript('login', username, password);
+        if (res && res.success) onLogin(res.user);
+        else Swal.fire('Error', 'Username atau password salah!', 'error');
+        setLoading(false);
       };
 
       return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 px-4">
           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row">
+            {/* Bagian Kiri: Form Login */}
             <div className="md:w-1/2 p-8 lg:p-12 flex flex-col justify-center animate-slide-left">
               <div className="mb-8 text-center md:text-left">
                 <div className="w-20 h-20 bg-blue-100 rounded-2xl flex items-center justify-center mx-auto md:mx-0 mb-4 shadow-lg">
@@ -245,6 +284,7 @@
               </form>
             </div>
             
+            {/* Bagian Kanan: Informasi */}
             <div className="hidden md:flex md:w-1/2 bg-gradient-to-br from-blue-600 to-indigo-800 p-12 flex-col justify-center items-center text-white animate-slide-right">
               <img 
                 src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Lambang_Kabupaten_Ngawi_%28svg%29.svg/1280px-Lambang_Kabupaten_Ngawi_%28svg%29.svg.png" 
@@ -275,6 +315,7 @@
 
       const canEditLembaga = userRole === 'Admin' || userRole === 'User';
 
+      // Jika tidak dapat mengedit lembaga, set filter sesuai lembaga user
       useEffect(() => {
         if (!canEditLembaga && userLembaga) {
           setFilterLembaga(userLembaga);
@@ -303,17 +344,11 @@
       }, [filtered]);
 
       const handleSaveKet = async (idx) => {
-        try {
-          const res = await runGoogleScript('updateKeteranganBukti', idx, editVal);
-          if (res.success) {
-            Swal.fire({ icon: 'success', title: 'Tersimpan', timer: 1000, showConfirmButton: false });
-            setEditingRow(null);
-            refreshData();
-          } else {
-            Swal.fire('Error', res.message || 'Gagal menyimpan', 'error');
-          }
-        } catch (err) {
-          Swal.fire('Koneksi Error', err.message, 'error');
+        const res = await runGoogleScript('updateKeteranganBukti', idx, editVal);
+        if (res.success) {
+          Swal.fire({ icon: 'success', title: 'Tersimpan', timer: 1000, showConfirmButton: false });
+          setEditingRow(null);
+          refreshData();
         }
       };
 
@@ -413,6 +448,7 @@
                         </td>
                         <td className="px-4 py-3 text-center">
                           <div className="flex justify-center gap-2">
+                            {/* Tombol Bukti dan Map hanya untuk Admin atau User */}
                             {(userRole === 'Admin' || userRole === 'User') ? (
                               <>
                                 <button 
@@ -479,14 +515,61 @@
           </div>
 
           {/* Modal Image */}
-          {modalImg && ( ... )} {/* sama persis dengan kode asli */}
+          {modalImg && (
+            <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setModalImg(null)}>
+              <div className="relative max-w-4xl w-full bg-white rounded-xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="p-4 flex justify-between items-center bg-slate-800 text-white">
+                  <h4 className="font-bold flex items-center gap-2"><i className="fas fa-file-image text-blue-400"></i> Bukti Dukung</h4>
+                  <button onClick={() => setModalImg(null)} className="text-3xl leading-none">&times;</button>
+                </div>
+                <div className="w-full h-[80vh] bg-slate-100 flex items-center justify-center">
+                  {modalImg.includes('drive.google.com') ? (
+                    <iframe
+                      src={`https://drive.google.com/file/d/${extractFileIdFromDriveUrl(modalImg)}/preview`}
+                      className="w-full h-full"
+                      allow="autoplay"
+                      title="Preview Google Drive"
+                    />
+                  ) : (
+                    <img
+                      src={modalImg}
+                      alt="Bukti Dukung"
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.parentNode.innerHTML = `
+                          <div class="flex flex-col items-center justify-center h-full p-8">
+                            <i class="fas fa-exclamation-triangle text-4xl text-red-500 mb-4"></i>
+                            <p class="text-lg font-bold text-gray-700">Gambar tidak dapat ditampilkan</p>
+                            <p class="text-sm text-gray-500 mt-2">Klik link berikut untuk membuka di tab baru:</p>
+                            <a href="${modalImg}" target="_blank" class="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Buka di Tab Baru</a>
+                          </div>
+                        `;
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Modal Map */}
-          {modalMap && ( ... )} {/* sama persis dengan kode asli */}
+          {modalMap && (
+            <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setModalMap(null)}>
+              <div className="w-full max-w-3xl bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="p-4 flex justify-between items-center bg-slate-800 text-white">
+                  <h4 className="font-bold flex items-center gap-2"><i className="fas fa-map-marked-alt text-blue-400"></i>Lokasi Presensi</h4>
+                  <button onClick={() => setModalMap(null)} className="text-3xl leading-none">&times;</button>
+                </div>
+                <iframe width="100%" height="450" frameBorder="0" style={{border:0}} src={`https://maps.google.com/maps?q=${modalMap.lat},${modalMap.lng}&z=16&output=embed`} allowFullScreen></iframe>
+              </div>
+            </div>
+          )}
         </div>
       );
     };
 
-    // ========== KOMPONEN DOKUMEN IJIN ==========
+    // ========== KOMPONEN DOKUMEN IJIN (dengan filter lembaga terkunci sesuai role, dan aksi hanya untuk Admin/User) ==========
     const DokumenIjin = ({ data, refreshData, userRole, userLembaga }) => {
       const [modalPdf, setModalPdf] = useState(null);
       const [editRow, setEditRow] = useState(null);
@@ -496,8 +579,9 @@
       const [filterNama, setFilterNama] = useState('');
 
       const canEditLembaga = userRole === 'Admin' || userRole === 'User';
-      const canEditData = userRole === 'Admin' || userRole === 'User';
+      const canEditData = userRole === 'Admin' || userRole === 'User'; // untuk aksi CRUD
 
+      // Jika tidak dapat mengedit lembaga, set filter sesuai lembaga user
       useEffect(() => {
         if (!canEditLembaga && userLembaga) {
           setFilterLembaga(userLembaga);
@@ -512,17 +596,11 @@
       }, [data, filterLembaga, filterNama]);
 
       const handleSave = async (idx) => {
-        try {
-          const res = await runGoogleScript('updateDokumenIjin', idx, status, ket);
-          if (res.success) {
-            Swal.fire({ icon: 'success', title: 'Berhasil Update', timer: 1000, showConfirmButton: false });
-            setEditRow(null);
-            refreshData();
-          } else {
-            Swal.fire('Error', res.message || 'Gagal update', 'error');
-          }
-        } catch (err) {
-          Swal.fire('Koneksi Error', err.message, 'error');
+        const res = await runGoogleScript('updateDokumenIjin', idx, status, ket);
+        if (res.success) {
+          Swal.fire({ icon: 'success', title: 'Berhasil Update', timer: 1000, showConfirmButton: false });
+          setEditRow(null);
+          refreshData();
         }
       };
 
@@ -537,16 +615,12 @@
           confirmButtonText: 'Ya, Hapus'
         });
         if (confirm.isConfirmed) {
-          try {
-            const res = await runGoogleScript('deleteDokumenIjin', rowIndex);
-            if (res.success) {
-              Swal.fire('Terhapus', 'Data berhasil dihapus', 'success');
-              refreshData();
-            } else {
-              Swal.fire('Error', res.message || 'Gagal menghapus', 'error');
-            }
-          } catch (err) {
-            Swal.fire('Koneksi Error', err.message, 'error');
+          const res = await runGoogleScript('deleteDokumenIjin', rowIndex);
+          if (res.success) {
+            Swal.fire('Terhapus', 'Data berhasil dihapus', 'success');
+            refreshData();
+          } else {
+            Swal.fire('Error', 'Gagal menghapus data', 'error');
           }
         }
       };
@@ -578,7 +652,7 @@
             )}
           </div>
 
-          {/* Tabel */}
+          {/* Tabel Dokumen Ijin */}
           <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
@@ -658,12 +732,22 @@
           </div>
 
           {/* Modal PDF */}
-          {modalPdf && ( ... )} {/* sama persis dengan kode asli */}
+          {modalPdf && (
+            <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setModalPdf(null)}>
+              <div className="w-full max-w-5xl h-[90vh] bg-white rounded-2xl overflow-hidden flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="p-4 flex justify-between bg-slate-800 text-white">
+                  <span className="font-bold flex items-center gap-2"><i className="fas fa-file-pdf text-red-400"></i>Pratinjau Dokumen</span>
+                  <button onClick={() => setModalPdf(null)} className="text-2xl leading-none">&times;</button>
+                </div>
+                <iframe src={modalPdf.replace('/view', '/preview')} className="flex-1 w-full border-none"></iframe>
+              </div>
+            </div>
+          )}
         </div>
       );
     };
 
-    // ========== KOMPONEN DATABASE PEGAWAI ==========
+    // ========== KOMPONEN DATABASE PEGAWAI (CRUD) - dengan pembatasan akses Admin ==========
     const DatabasePegawai = ({ refreshParent, userRole }) => {
       const [data, setData] = useState([]);
       const [loading, setLoading] = useState(false);
@@ -686,14 +770,9 @@
 
       const fetchData = async () => {
         setLoading(true);
-        try {
-          const res = await runGoogleScript('getPegawai');
-          setData(res || []);
-        } catch (err) {
-          Swal.fire('Error', err.message, 'error');
-        } finally {
-          setLoading(false);
-        }
+        const res = await runGoogleScript('getPegawai');
+        setData(res || []);
+        setLoading(false);
       };
 
       useEffect(() => {
@@ -751,26 +830,21 @@
         }
 
         setLoading(true);
-        try {
-          let res;
-          if (editingRow) {
-            res = await runGoogleScript('updatePegawai', editingRow, formData);
-          } else {
-            res = await runGoogleScript('addPegawai', formData);
-          }
-          if (res.success) {
-            Swal.fire({ icon: 'success', title: 'Berhasil', timer: 1500, showConfirmButton: false });
-            setModalOpen(false);
-            fetchData();
-            if (refreshParent) refreshParent();
-          } else {
-            Swal.fire('Error', res.message || 'Gagal menyimpan data', 'error');
-          }
-        } catch (err) {
-          Swal.fire('Koneksi Error', err.message, 'error');
-        } finally {
-          setLoading(false);
+        let res;
+        if (editingRow) {
+          res = await runGoogleScript('updatePegawai', editingRow, formData);
+        } else {
+          res = await runGoogleScript('addPegawai', formData);
         }
+        if (res.success) {
+          Swal.fire({ icon: 'success', title: 'Berhasil', timer: 1500, showConfirmButton: false });
+          setModalOpen(false);
+          fetchData();
+          if (refreshParent) refreshParent();
+        } else {
+          Swal.fire('Error', 'Gagal menyimpan data', 'error');
+        }
+        setLoading(false);
       };
 
       const handleDelete = async (rowIndex, nama) => {
@@ -789,19 +863,14 @@
         });
         if (confirm.isConfirmed) {
           setLoading(true);
-          try {
-            const res = await runGoogleScript('deletePegawai', rowIndex);
-            if (res.success) {
-              Swal.fire('Terhapus', 'Data pegawai berhasil dihapus', 'success');
-              fetchData();
-            } else {
-              Swal.fire('Error', res.message || 'Gagal menghapus', 'error');
-            }
-          } catch (err) {
-            Swal.fire('Koneksi Error', err.message, 'error');
-          } finally {
-            setLoading(false);
+          const res = await runGoogleScript('deletePegawai', rowIndex);
+          if (res.success) {
+            Swal.fire('Terhapus', 'Data pegawai berhasil dihapus', 'success');
+            fetchData();
+          } else {
+            Swal.fire('Error', 'Gagal menghapus', 'error');
           }
+          setLoading(false);
         }
       };
 
@@ -830,7 +899,7 @@
             <input type="text" placeholder="Cari Nama Pegawai..." className="border p-3 rounded-xl flex-1 text-sm outline-none focus:border-blue-500" value={filterNama} onChange={e => setFilterNama(e.target.value)} />
           </div>
 
-          {/* Tabel */}
+          {/* Tabel Pegawai */}
           <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
@@ -882,13 +951,72 @@
             </div>
           </div>
 
-          {/* Modal Form */}
-          {modalOpen && isAdmin && ( ... )} {/* sama persis dengan kode asli */}
+          {/* Modal Form Tambah/Edit Pegawai */}
+          {modalOpen && isAdmin && (
+            <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setModalOpen(false)}>
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="p-6 border-b flex justify-between items-center bg-slate-800 text-white sticky top-0">
+                  <h4 className="text-xl font-bold flex items-center gap-2">
+                    <i className={`fas ${editingRow ? 'fa-edit' : 'fa-user-plus'} text-blue-400`}></i>
+                    {editingRow ? 'Edit Pegawai' : 'Tambah Pegawai Baru'}
+                  </h4>
+                  <button onClick={() => setModalOpen(false)} className="text-3xl leading-none hover:text-slate-300">&times;</button>
+                </div>
+                <div className="p-6 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Username (MP/ID) *</label>
+                      <input type="text" name="Username (MP/ID)" value={formData['Username (MP/ID)']} onChange={handleInputChange} className="w-full border p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Password *</label>
+                      <input type="text" name="Password" value={formData['Password']} onChange={handleInputChange} className="w-full border p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Nama Lembaga</label>
+                      <input type="text" name="Name Lembaga" value={formData['Name Lembaga']} onChange={handleInputChange} className="w-full border p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Nama Pegawai *</label>
+                      <input type="text" name="Name Pegawai" value={formData['Name Pegawai']} onChange={handleInputChange} className="w-full border p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Latitude</label>
+                      <input type="text" name="Latitude" value={formData['Latitude']} onChange={handleInputChange} className="w-full border p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Longitude</label>
+                      <input type="text" name="Longitude" value={formData['Longitude']} onChange={handleInputChange} className="w-full border p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Radius (m)</label>
+                      <input type="text" name="Radius (m)" value={formData['Radius (m)']} onChange={handleInputChange} className="w-full border p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Role</label>
+                      <select name="Role" value={formData['Role']} onChange={handleInputChange} className="w-full border p-3 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="">Pilih Role</option>
+                        <option value="Admin">Admin</option>
+                        <option value="User">User</option>
+                        <option value="Supervisor">Supervisor</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-4 border-t">
+                    <button onClick={() => setModalOpen(false)} className="px-6 py-3 border-2 border-slate-300 rounded-xl font-bold text-slate-600 hover:bg-slate-50 transition">Batal</button>
+                    <button onClick={handleSubmit} disabled={loading} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-50">
+                      {loading ? 'Menyimpan...' : <><i className="fas fa-save"></i> Simpan</>}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       );
     };
 
-    // ========== KOMPONEN MONITORING ==========
+    // ========== KOMPONEN MONITORING (EXPORT & RESET) - dengan pembatasan akses ==========
     const Monitoring = ({ presensiData, refreshData, userRole }) => {
       const [filterLembaga, setFilterLembaga] = useState('');
       const isAdmin = userRole === 'Admin';
@@ -935,7 +1063,7 @@
               const isPSW = item.isPSW;
 
               if (isPSW) {
-                data.cell.styles.fillColor = [209, 250, 229];
+                data.cell.styles.fillColor = [209, 250, 229]; // hijau muda
                 data.cell.styles.textColor = [6, 78, 59];
               } else if (tidakHadir) {
                 data.cell.styles.fillColor = [0, 0, 0];
@@ -966,16 +1094,10 @@
         });
         if (resConfirm.isConfirmed) {
           Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-          try {
-            const res = await runGoogleScript('resetDataPresensi');
-            if (res.success) {
-              Swal.fire('Terhapus', 'Database presensi telah dikosongkan.', 'success');
-              refreshData();
-            } else {
-              Swal.fire('Error', res.message || 'Gagal reset', 'error');
-            }
-          } catch (err) {
-            Swal.fire('Koneksi Error', err.message, 'error');
+          const res = await runGoogleScript('resetDataPresensi');
+          if (res.success) {
+            Swal.fire('Terhapus', 'Database presensi telah dikosongkan.', 'success');
+            refreshData();
           }
         }
       };
@@ -990,6 +1112,7 @@
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Bagian Ekspor PDF - hanya untuk Admin dan User */}
             {canExport ? (
               <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200">
                 <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
@@ -1011,6 +1134,7 @@
               </div>
             )}
 
+            {/* Bagian Reset Data - hanya untuk Admin */}
             <div className="bg-red-50 p-6 rounded-2xl border border-red-100 flex flex-col justify-between">
               <div>
                 <h4 className="font-bold text-red-800 mb-2 flex items-center gap-2">
@@ -1055,22 +1179,21 @@
           ]);
           setPresensi(resP || []);
           setIjin(resI || []);
-        } catch (e) { 
-          console.error(e);
-          Swal.fire('Error', 'Gagal mengambil data dari server.', 'error');
-        } finally {
-          setLoading(false);
-        }
+        } catch (e) { console.error(e); }
+        setLoading(false);
       };
 
       useEffect(() => { if (user) fetchData(); }, [user]);
 
+      // Perkaya data presensi dengan informasi PSW dari ijin
       const enrichedPresensi = useMemo(() => {
         return enrichPresensiWithIjin(presensi, ijin);
       }, [presensi, ijin]);
 
+      // Tentukan apakah pengguna dapat mengakses tab Database Pegawai
       const canAccessPegawai = user && (user.role === 'Admin' || user.role === 'User');
 
+      // Jika tab aktif adalah 'pegawai' tetapi tidak punya akses, alihkan ke dashboard
       useEffect(() => {
         if (activeTab === 'pegawai' && !canAccessPegawai) {
           setActiveTab('dashboard');
@@ -1096,8 +1219,10 @@
 
       if (!user) return <Login onLogin={setUser} />;
 
+      // Tentukan lembaga untuk non-Admin/User (gunakan role sebagai lembaga)
       const userLembaga = (user.role !== 'Admin' && user.role !== 'User') ? user.role : (user.lembaga || '');
 
+      // Daftar tab yang tersedia, filter berdasarkan akses
       const tabs = [
         {id: 'dashboard', icon: 'fa-chart-pie', label: 'Dashboard Presensi'},
         {id: 'psw', icon: 'fa-file-signature', label: 'Dokumen Ijin (PSW)'},
@@ -1109,7 +1234,6 @@
         <div className="min-h-screen flex flex-col md:flex-row bg-slate-100">
           {/* Sidebar */}
           <div className="w-full md:w-72 bg-slate-900 text-white flex flex-col shadow-2xl z-40">
-            {/* ... (sama seperti asli) ... */}
             <div className="p-8 border-b border-slate-800 flex items-center gap-4 bg-slate-950/50">
               <div className="bg-blue-600 w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 overflow-hidden">
                 <img 
@@ -1157,7 +1281,7 @@
             </div>
           </div>
 
-          {/* Main Content */}
+          {/* Main Content Area */}
           <div className="flex-1 flex flex-col h-screen overflow-hidden">
             <header className="bg-white/80 backdrop-blur-md border-b px-8 py-5 flex justify-between items-center z-30 shadow-sm">
               <h2 className="text-2xl font-black text-slate-800 capitalize flex items-center gap-3">
